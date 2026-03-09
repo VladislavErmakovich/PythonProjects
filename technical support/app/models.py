@@ -16,11 +16,12 @@ class Ticket_Priority(str, Enum):
 
 class User_Role(str, Enum):
     ADMIN = "admin"
+    MODERATOR = "moderator"
     USER = "user"
 
 class User_Model(Base):
     __tablename__ = "users"
-    
+
     id: Mapped[int] = mapped_column(primary_key=True, index = True)
     login: Mapped[str] = mapped_column(String, unique=True, index = True)
     email: Mapped[str] = mapped_column(String, unique=True, index=True)

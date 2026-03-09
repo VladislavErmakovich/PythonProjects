@@ -3,7 +3,7 @@ from pydantic import BaseModel
 from datetime import datetime
 from typing import List, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, or_ 
 from contextlib import asynccontextmanager
 
 from .database import get_db, engine, Base
@@ -70,12 +70,15 @@ async def root():
 # create user
 @app.post("/register", response_model=User, tags=["Auth"])
 async def  register_user(user_data: User_Create, db: AsyncSession = Depends(get_db)):
-    query = select(User_Model).where(User_Model.email == user_data.email or User_Model.login == user_data.login)
+    query = select(User_Model).where(or_(User_Model.email == user_data.email,
+                                        User_Model.login == user_data.login)
+                                        )
+    
     result = await db.execute(query)
     existing_user = result.scalar_one_or_none()
 
-    if existing_user is None:
-        raise HTTPException(status_code=400, detail="Пользователь с такой почтой уже существует")
+    if existing_user:
+        raise HTTPException(status_code=400, detail="Пользователь с такой почтой или логином уже существует")
 
     hashed_password = get_password_hash(user_data.password)
 
@@ -91,7 +94,7 @@ async def  register_user(user_data: User_Create, db: AsyncSession = Depends(get_
     return new_user
 
 # create ticket
-@app.post("/tickets",response_model=Ticket, tags=["Tickets"])
+@app.post("/ticket",response_model=Ticket, tags=["Tickets"])
 async def create_ticket(ticket_data: Ticket_Create, db: AsyncSession = Depends(get_db)):
     
     new_ticket = Ticket_Model(title = ticket_data.title,
@@ -110,7 +113,7 @@ async def get_tickets(skip: int = 0, limit: int = 50, db: AsyncSession= Depends(
     return result.scalars().all()
 
 # read one ticket (id)
-@app.get("/tickets/{ticket_id}", response_model= Ticket, tags=["Tickets"])
+@app.get("/ticket/{ticket_id}", response_model= Ticket, tags=["Tickets"])
 async def get_ticket(ticket_id: int, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Ticket_Model).where(Ticket_Model.id==ticket_id))
     ticket = result.scalar_one_or_none()
@@ -120,17 +123,26 @@ async def get_ticket(ticket_id: int, db: AsyncSession = Depends(get_db)):
     return ticket
 
 # read users (limit)
-@app.get("/user", response_model=List[User], tags=["Users"])
-async def get_users(skip: int = 0, limit: int = 100,  db: AsyncSession = Depends(get_password_hash)):
+@app.get("/users", response_model=List[User], tags=["Users"])
+async def get_users(skip: int = 0, limit: int = 100,  db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(User_Model).offset(skip).limit(50))
     return result.scalars().all()
 
-# read user ()
+# read user (login)
+@app.get("/user/{user_login}", response_model=User, tags=['Users'])
+async def get_user(user_login: str, db: AsyncSession =Depends(get_db)):
+    result = await db.execute(select(User_Model).where(User_Model.login == user_login))
+    user = result.scalar_one_or_none()
+
+    if user is None:
+        raise HTTPException(status_code=404, detail="Пользователь не найден")
+    return user
 
 # update ticket (id)
-@app.patch("/tickets/{ticket_id}", response_model=Ticket, tags=["Tickets"])
+@app.patch("/ticket/{ticket_id}", response_model=Ticket, tags=["Tickets"])
 async def update_ticket(ticket_id: int, ticket_update: Ticket_Update, db: AsyncSession = Depends(get_db)):
-    query = select(Ticket_Model).where(Ticket_Model.id==ticket_id and Ticket_Model.status != Ticket_Status.CLOSED)
+    query = select(Ticket_Model).where(Ticket_Model.id==ticket_id,
+                                        Ticket_Model.status != Ticket_Status.CLOSED)
     result = await db.execute(query)
     ticket = result.scalar_one_or_none()
 
@@ -147,7 +159,7 @@ async def update_ticket(ticket_id: int, ticket_update: Ticket_Update, db: AsyncS
     return ticket
 
 # delete ticket (id)
-@app.delete("/tickets/{ticket_id}", tags=["Tickets"])
+@app.delete("/ticket/{ticket_id}", tags=["Tickets"])
 async def delete_ticket(ticket_id: int, db: AsyncSession = Depends(get_db)):
     query = select(Ticket_Model).where(Ticket_Model.id == ticket_id)
     result = await db.execute(query)
