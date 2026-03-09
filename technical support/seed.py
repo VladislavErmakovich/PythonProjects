@@ -2,8 +2,8 @@ import asyncio
 from sqlalchemy import select
 
 from app.database import new_session, engine, Base
-from app.models import Ticket_Model, Ticket_Status, Ticket_Priority
-
+from app.models import Ticket_Model, Ticket_Status, Ticket_Priority, User_Model, User_Role
+from app.security import get_password_hash
 
 TICKETS = [
     {
@@ -69,12 +69,29 @@ async def seed_data():
 
     async with new_session() as session:
 
+        query = select(User_Model).where(User_Model.login == "admin")
+        result = await session.execute(query)
+        admin = result.scalar_one_or_none()
+
+        if not admin:
+            admin = User_Model(
+                login="admin",
+                email="supesu@ntc.com",
+                password_hash=get_password_hash("admin123"),
+                role=User_Role.ADMIN
+            )
+            session.add(admin)
+            await session.flush()
+
+        admin_id = admin.id
+
         for ticket_data in TICKETS:
             ticket = Ticket_Model(
                 title = ticket_data["title"],
                 description = ticket_data["description"],
                 priority = ticket_data["priority"],
-                status = ticket_data["status"]
+                status = ticket_data["status"],
+                owner_id = admin_id
             )
             session.add(ticket)
 

@@ -1,15 +1,18 @@
 from fastapi import FastAPI, Depends, HTTPException
-from pydantic import BaseModel
+from fastapi.security import OAuth2PasswordRequestForm, OAuth2PasswordBearer
+from pydantic import BaseModel, EmailStr
 from datetime import datetime
 from typing import List, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, or_ 
 from contextlib import asynccontextmanager
+from jose import JWTError, jwt
 
 from .database import get_db, engine, Base
 from .models import Ticket_Priority, Ticket_Status, Ticket_Model
 from .models import User_Role, User_Model
-from .security import get_password_hash
+from .security import get_password_hash, verify_password,create_access_token
+from .security import SECRET_KEY, ALGORITHM
 
 class Ticket_Base(BaseModel):
     title: str
@@ -36,7 +39,7 @@ class Ticket_Update(BaseModel):
 
 class User_Create(BaseModel):
     login: str
-    email: str
+    email: EmailStr
     password: str
     role: User_Role = User_Role.USER 
 
@@ -50,6 +53,9 @@ class User(BaseModel):
     class Config:
         from_attributes = True
 
+class Token(BaseModel):
+    access_token: str
+    token_type: str
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -61,6 +67,31 @@ app = FastAPI(title="CRM support",
               description="API для тех поддержки",
               version="1.0.2",
               lifespan=lifespan)
+
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+
+async def get_current_user(token: str = Depends(oauth2_scheme),
+                           db: AsyncSession = Depends(get_db)):
+    credentials_exception = HTTPException(
+        status_code=401,
+        detail="Не удалось валидировать токен",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        username: str = payload.get("sub")
+        if username is None:
+            raise credentials_exception
+    except JWTError:
+        raise credentials_exception
+    
+    query = select(User_Model).where(User_Model.login == username)
+    result = await db.execute(query)
+    user = result.scalar_one_or_none()
+    
+    if user is None:
+        raise credentials_exception
+    return user
 
 # проверка статуса
 @app.get("/")
@@ -93,13 +124,33 @@ async def  register_user(user_data: User_Create, db: AsyncSession = Depends(get_
 
     return new_user
 
+# login
+@app.post("/token", response_model=Token, tags=["Auth"])
+async def login_for_accsess_token(form_data: OAuth2PasswordRequestForm = Depends(),
+                                  db: AsyncSession=Depends(get_db)):
+    query = select(User_Model).where(User_Model.login == form_data.username)
+    result = await db.execute(query)
+    user = result.scalar_one_or_none()
+
+    if not user or not verify_password(user.password_hash, form_data.password):
+        raise HTTPException(
+            status_code=401,
+            detail="Неверный логин или пароль",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    access_token = create_access_token(data={"sub": user.login, "role": user.role})
+    
+    return {"access_token": access_token, "token_type": "bearer"}
+
 # create ticket
-@app.post("/ticket",response_model=Ticket, tags=["Tickets"])
-async def create_ticket(ticket_data: Ticket_Create, db: AsyncSession = Depends(get_db)):
+@app.post("/tickets",response_model=Ticket, tags=["Tickets"])
+async def create_ticket(ticket_data: Ticket_Create, db: AsyncSession = Depends(get_db), current_user: User_Model = Depends(get_current_user)):
     
     new_ticket = Ticket_Model(title = ticket_data.title,
                               description = ticket_data.description,
-                              priority =ticket_data.priority)
+                              priority =ticket_data.priority,
+                              owner_id = current_user.id)
     
     db.add(new_ticket)
     await db.commit()
@@ -108,12 +159,12 @@ async def create_ticket(ticket_data: Ticket_Create, db: AsyncSession = Depends(g
 
 # read tickets (limit)
 @app.get("/tickets", response_model=List[Ticket], tags=["Tickets"])
-async def get_tickets(skip: int = 0, limit: int = 50, db: AsyncSession= Depends(get_db)):
+async def get_tickets(skip: int = 0, limit: int = 50, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Ticket_Model).offset(skip).limit(limit))
     return result.scalars().all()
 
 # read one ticket (id)
-@app.get("/ticket/{ticket_id}", response_model= Ticket, tags=["Tickets"])
+@app.get("/tickets/{ticket_id}", response_model= Ticket, tags=["Tickets"])
 async def get_ticket(ticket_id: int, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Ticket_Model).where(Ticket_Model.id==ticket_id))
     ticket = result.scalar_one_or_none()
@@ -129,8 +180,8 @@ async def get_users(skip: int = 0, limit: int = 100,  db: AsyncSession = Depends
     return result.scalars().all()
 
 # read user (login)
-@app.get("/user/{user_login}", response_model=User, tags=['Users'])
-async def get_user(user_login: str, db: AsyncSession =Depends(get_db)):
+@app.get("/users/{user_login}", response_model=User, tags=['Users'])
+async def get_user(user_login: str, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(User_Model).where(User_Model.login == user_login))
     user = result.scalar_one_or_none()
 
@@ -139,7 +190,7 @@ async def get_user(user_login: str, db: AsyncSession =Depends(get_db)):
     return user
 
 # update ticket (id)
-@app.patch("/ticket/{ticket_id}", response_model=Ticket, tags=["Tickets"])
+@app.patch("/tickets/{ticket_id}", response_model=Ticket, tags=["Tickets"])
 async def update_ticket(ticket_id: int, ticket_update: Ticket_Update, db: AsyncSession = Depends(get_db)):
     query = select(Ticket_Model).where(Ticket_Model.id==ticket_id,
                                         Ticket_Model.status != Ticket_Status.CLOSED)
@@ -158,8 +209,24 @@ async def update_ticket(ticket_id: int, ticket_update: Ticket_Update, db: AsyncS
     await db.refresh(ticket)
     return ticket
 
+#delete user (login)
+@app.delete("/users/{user_login}", tags=["Users"])
+async def delete_user(user_login: str, db:AsyncSession = Depends(get_db)):
+    query = select(User_Model).where(User_Model.login == user_login)
+    result = await db.execute(query)
+
+    user = result.scalar_one_or_none()
+
+    if user is None:
+        raise HTTPException(status_code=404, detail="пользователь не найден")
+    
+    await db.delete(user)
+    await db.commit()
+
+    return {"message": "Пользователь успешно удален", "login": user_login}
+
 # delete ticket (id)
-@app.delete("/ticket/{ticket_id}", tags=["Tickets"])
+@app.delete("/tickets/{ticket_id}", tags=["Tickets"])
 async def delete_ticket(ticket_id: int, db: AsyncSession = Depends(get_db)):
     query = select(Ticket_Model).where(Ticket_Model.id == ticket_id)
     result = await db.execute(query)

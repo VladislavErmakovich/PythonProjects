@@ -1,5 +1,5 @@
-from sqlalchemy.orm import Mapped, mapped_column
-from sqlalchemy import String, DateTime, func
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy import String, DateTime, func, ForeignKey 
 from datetime import datetime
 from enum import Enum
 from .database import Base
@@ -16,7 +16,6 @@ class Ticket_Priority(str, Enum):
 
 class User_Role(str, Enum):
     ADMIN = "admin"
-    MODERATOR = "moderator"
     USER = "user"
 
 class User_Model(Base):
@@ -31,6 +30,8 @@ class User_Model(Base):
 
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
+    tickets = relationship("Ticket_Model", back_populates="owner")
+
 class Ticket_Model(Base):
     __tablename__ = "tickets"
 
@@ -44,3 +45,5 @@ class Ticket_Model(Base):
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
 
+    owner_id: Mapped[int] = mapped_column(ForeignKey("user.id"))
+    owner = relationship("User_Model", back_populates="tickets")
