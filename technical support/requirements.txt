@@ -3,6 +3,9 @@ uvicorn==0.34.3
 pydantic==2.12.5
 asyncpg==0.31.0
 sqlalchemy==2.0.32
+passlib==1.7.4
+python-jose==3.5.0
+python-multipart==0.0.22
 
 
 

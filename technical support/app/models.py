@@ -14,6 +14,22 @@ class Ticket_Priority(str, Enum):
     MEDIUM = "medium"
     HIGH = "high"
 
+class User_Role(str, Enum):
+    ADMIN = "admin"
+    USER = "user"
+
+class User_Model(Base):
+    __tablename__ = "users"
+    
+    id: Mapped[int] = mapped_column(primary_key=True, index = True)
+    login: Mapped[str] = mapped_column(String, unique=True, index = True)
+    email: Mapped[str] = mapped_column(String, unique=True, index=True)
+
+    password_hash: Mapped[str] = mapped_column(String)
+    role: Mapped[User_Role] = mapped_column(default=User_Role.USER)
+
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
 class Ticket_Model(Base):
     __tablename__ = "tickets"
 
