@@ -1,5 +1,6 @@
-from fastapi import FastAPI, Depends, HTTPException
+from fastapi import FastAPI, Depends, HTTPException, WebSocket, Query, WebSocketDisconnect
 from fastapi.security import OAuth2PasswordRequestForm, OAuth2PasswordBearer
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, EmailStr, Field, field_validator
 from datetime import datetime
 from typing import List, Optional
@@ -13,6 +14,7 @@ from .models import Ticket_Priority, Ticket_Status, Ticket_Model
 from .models import User_Role, User_Model
 from .security import get_password_hash, verify_password,create_access_token
 from .security import SECRET_KEY, ALGORITHM
+from .chat_manager import manager
 
 class Ticket_Base(BaseModel):
     title: str
@@ -69,6 +71,21 @@ class Token(BaseModel):
     access_token: str
     token_type: str
 
+# проверка токена для websocket
+async def get_current_user_wb(websocket: WebSocket, token:str, db:AsyncSession):
+    try:
+        payload = jwt.decode(token=token, key=SECRET_KEY, algorithms=ALGORITHM)
+        login: str = payload.get("sub")
+        if login is None:
+            return None
+    except JWTError:
+        return None
+
+    query = select(User_Model).where(User_Model.login==login)
+    result = await db.execute(query)
+    user = result.scalar_one_or_none()
+    return user
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     async with engine.begin() as conn:
@@ -80,8 +97,17 @@ app = FastAPI(title="CRM support",
               version="1.0.2",
               lifespan=lifespan)
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
+# функция для получения пользователя
 async def get_current_user(token: str = Depends(oauth2_scheme),
                            db: AsyncSession = Depends(get_db)):
     credentials_exception = HTTPException(
@@ -303,5 +329,42 @@ async def delete_ticket(ticket_id: int, db: AsyncSession = Depends(get_db), curr
     await db.commit()
 
     return {"message": "Тикет успешно удален", "id": ticket_id}
+
+# websocket
+@app.websocket("/ws/chat")
+async def websocket_endpoint(websocket: WebSocket, token: str = Query(...), db: AsyncSession = Depends(get_db)):
+    user = await get_current_user_wb(websocket, token, db)
+
+    if user is None:
+        await websocket.close(code=1008) 
+        return
+    
+    await manager.connect(websocket)
+
+    await manager.broadcast({
+        "type": "system",
+        "message": f"📢 {user.login} вошел в чат",
+        "count": manager.get_count()
+    })
+
+    try:
+        while True:
+            data = await websocket.receive_text()
+            
+            await manager.broadcast({
+                "type": "user",
+                "sender": user.login,
+                "message": data,
+                "count": manager.get_count()
+            })
+            
+    except WebSocketDisconnect:
+        manager.disconnect(websocket)
+        await manager.broadcast({
+            "type": "system",
+            "message": f"🚪 {user.login} покинул чат",
+            "count": manager.get_count()
+        })
+
 
 # uvicorn app.main:app --reload -- запуск

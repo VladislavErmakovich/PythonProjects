@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CRM Support - Live Chat</title>
+    <style>
+        :root {
+            --primary: #00a1ff;
+            --primary-dark: #0084d1;
+            --bg-gradient: linear-gradient(135deg, #e0f2fe 0%, #f0f9ff 100%);
+            --white: #ffffff;
+            --text-main: #2c3e50;
+            --text-muted: #7f8c8d;
+            --system-bg: rgba(0, 161, 255, 0.1);
+        }
+
+        body {
+            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background: var(--bg-gradient);
+            background-attachment: fixed;
+            margin: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            color: var(--text-main);
+        }
+
+        #chat-container {
+            width: 100%;
+            max-width: 420px;
+            height: 85vh;
+            background: rgba(255, 255, 255, 0.8);
+            backdrop-filter: blur(15px);
+            border-radius: 24px;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 15px 35px rgba(0,0,0,0.05);
+            border: 1px solid rgba(255,255,255,0.4);
+            overflow: hidden;
+        }
+
+        header {
+            background: var(--primary);
+            color: white;
+            padding: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        }
+
+        header h2 { margin: 0; font-size: 18px; font-weight: 600; }
+
+        #online-count {
+            font-size: 11px;
+            background: rgba(255, 255, 255, 0.2);
+            padding: 4px 10px;
+            border-radius: 20px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        /* Экран входа */
+        #login-screen {
+            flex: 1;
+            padding: 40px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            justify-content: center;
+            text-align: center;
+        }
+
+        input {
+            padding: 12px 16px;
+            border: 1px solid #d1d5db;
+            border-radius: 12px;
+            font-size: 15px;
+            outline: none;
+            transition: all 0.3s;
+        }
+
+        input:focus {
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(0, 161, 255, 0.1);
+        }
+
+        button.main-btn {
+            background: var(--primary);
+            color: white;
+            border: none;
+            padding: 12px;
+            border-radius: 12px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+
+        button.main-btn:hover { background: var(--primary-dark); }
+
+        /* Чат */
+        #chat-ui { flex: 1; display: none; flex-direction: column; overflow: hidden; }
+
+        #messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            background: rgba(255, 255, 255, 0.3);
+        }
+
+        .msg {
+            max-width: 80%;
+            padding: 10px 14px;
+            border-radius: 16px;
+            font-size: 14px;
+            line-height: 1.4;
+            position: relative;
+        }
+
+        /* Мои сообщения (Справа) */
+        .my-msg {
+            align-self: flex-end;
+            background: var(--primary);
+            color: white;
+            border-bottom-right-radius: 2px;
+            box-shadow: 0 4px 10px rgba(0, 161, 255, 0.2);
+        }
+
+        /* Чужие сообщения (Слева) */
+        .other-msg {
+            align-self: flex-start;
+            background: var(--white);
+            color: var(--text-main);
+            border-bottom-left-radius: 2px;
+            border: 1px solid #eef2f5;
+        }
+
+        .system-msg {
+            align-self: center;
+            background: var(--system-bg);
+            color: var(--primary-dark);
+            font-size: 11px;
+            padding: 6px 12px;
+            border-radius: 10px;
+            font-weight: 500;
+        }
+
+        .sender {
+            font-size: 10px;
+            margin-bottom: 4px;
+            font-weight: bold;
+            display: block;
+            opacity: 0.8;
+        }
+
+        /* Поле ввода */
+        .input-area {
+            padding: 15px 20px;
+            background: white;
+            display: flex;
+            gap: 10px;
+            border-top: 1px solid #f0f4f8;
+        }
+
+        #msgInput { flex: 1; border-radius: 24px; background: #f8fafc; }
+
+        .send-btn {
+            background: var(--primary);
+            color: white;
+            border: none;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+        }
+    </style>
+</head>
+<body>
+
+<div id="chat-container">
+    <header>
+        <h2>CRM Support</h2>
+        <span id="online-count">Онлайн: 0</span>
+    </header>
+
+    <!-- Экран Входа -->
+    <div id="login-screen">
+        <h3 style="margin-top: 0;">Вход в чат</h3>
+        <p style="color: var(--text-muted); font-size: 14px; margin-bottom: 10px;">Войдите, чтобы начать общение</p>
+        <input type="text" id="username" placeholder="Логин">
+        <input type="password" id="password" placeholder="Пароль">
+        <button class="main-btn" onclick="handleLogin()">Войти</button>
+        <div id="login-error" style="color: #e74c3c; font-size: 13px;"></div>
+    </div>
+
+    <!-- Интерфейс Чата -->
+    <div id="chat-ui">
+        <div id="messages"></div>
+        <div class="input-area">
+            <input type="text" id="msgInput" placeholder="Введите сообщение..." onkeypress="if(event.key==='Enter') handleSend()">
+            <button class="send-btn" onclick="handleSend()">➤</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    let socket;
+    let myLogin = "";
+
+    async function handleLogin() {
+        const u = document.getElementById("username").value;
+        const p = document.getElementById("password").value;
+        const errDiv = document.getElementById("login-error");
+
+        const body = new FormData();
+        body.append("username", u);
+        body.append("password", p);
+
+        try {
+            const res = await fetch("http://127.0.0.1:8000/token", { method: "POST", body });
+            if (!res.ok) throw new Error("Неверный логин или пароль");
+
+            const data = await res.json();
+            myLogin = u;
+            errDiv.innerText = "";
+            initChat(data.access_token);
+        } catch (e) {
+            errDiv.innerText = e.message;
+        }
+    }
+
+    function initChat(token) {
+        socket = new WebSocket(`ws://127.0.0.1:8000/ws/chat?token=${token}`);
+
+        socket.onopen = () => {
+            document.getElementById("login-screen").style.display = "none";
+            document.getElementById("chat-ui").style.display = "flex";
+        };
+
+        socket.onmessage = (event) => {
+            const data = JSON.parse(event.data);
+            document.getElementById("online-count").innerText = "Онлайн: " + data.count;
+
+            const msgArea = document.getElementById("messages");
+            const div = document.createElement("div");
+
+            if (data.type === "system") {
+                div.className = "msg system-msg";
+                div.innerText = data.message;
+            } else {
+                const isMe = data.sender === myLogin;
+                div.className = "msg " + (isMe ? "my-msg" : "other-msg");
+                div.innerHTML = `<span class="sender">${isMe ? "Вы" : data.sender}</span>${data.message}`;
+            }
+
+            msgArea.appendChild(div);
+            msgArea.scrollTop = msgArea.scrollHeight;
+        };
+
+        socket.onclose = () => {
+            alert("Соединение закрыто. Войдите снова.");
+            location.reload();
+        };
+    }
+
+    function handleSend() {
+        const input = document.getElementById("msgInput");
+        if (input.value && socket) {
+            socket.send(input.value);
+            input.value = "";
+        }
+    }
+</script>
+
+</body>
+</html>
