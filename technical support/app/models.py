@@ -45,5 +45,5 @@ class Ticket_Model(Base):
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
 
-    owner_id: Mapped[int] = mapped_column(ForeignKey("user.id"))
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
     owner = relationship("User_Model", back_populates="tickets")

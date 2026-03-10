@@ -1,6 +1,6 @@
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.security import OAuth2PasswordRequestForm, OAuth2PasswordBearer
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field, field_validator
 from datetime import datetime
 from typing import List, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -38,11 +38,20 @@ class Ticket_Update(BaseModel):
     status: Optional[Ticket_Status] = None
 
 class User_Create(BaseModel):
-    login: str
+    login: str = Field(...,min_length=3, max_length=20, pattern="^[a-zA-Z0-9_]+$")
     email: EmailStr
-    password: str
+    password: str= Field(..., min_length=8)
     role: User_Role = User_Role.USER 
 
+    @field_validator("password")
+    @classmethod
+    def password_complexity(cls, v: str):
+        if not any(char.isdigit() for char in v):
+            raise ValueError("Пароль должен содержать хотя бы одну цифру")
+        if not any(char.isupper() for char in v):
+            raise ValueError("Пароль должен содержать хотя бы одну заглавную букву")
+        return v
+    
 class User(BaseModel):
     id: int
     login: str
@@ -64,7 +73,7 @@ async def lifespan(app: FastAPI):
     yield
 
 app = FastAPI(title="CRM support",
-              description="API для тех поддержки",
+              description="**API для тех поддержки**",
               version="1.0.2",
               lifespan=lifespan)
 
@@ -159,29 +168,45 @@ async def create_ticket(ticket_data: Ticket_Create, db: AsyncSession = Depends(g
 
 # read tickets (limit)
 @app.get("/tickets", response_model=List[Ticket], tags=["Tickets"])
-async def get_tickets(skip: int = 0, limit: int = 50, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Ticket_Model).offset(skip).limit(limit))
+async def get_tickets(skip: int = 0, limit: int = 50, db: AsyncSession = Depends(get_db), current_user: User_Model= Depends(get_current_user)):
+    if current_user.role == User_Role.ADMIN:
+        query = select(Ticket_Model).offset(skip).limit(limit)
+    else:
+        query = select(Ticket_Model).where(Ticket_Model.owner_id == current_user.id).offset(skip).limit(limit)
+    
+    result = await db.execute(query)
     return result.scalars().all()
 
 # read one ticket (id)
 @app.get("/tickets/{ticket_id}", response_model= Ticket, tags=["Tickets"])
-async def get_ticket(ticket_id: int, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Ticket_Model).where(Ticket_Model.id==ticket_id))
+async def get_ticket(ticket_id: int, db: AsyncSession = Depends(get_db), current_user: User_Model= Depends(get_current_user)):
+    if current_user.role == User_Role.ADMIN:
+        query = select(Ticket_Model).where(Ticket_Model.id==ticket_id)
+    else:
+        query = select(Ticket_Model).where(Ticket_Model.owner_id == current_user.id, Ticket_Model.id==ticket_id)
+    
+    result = await db.execute(query)
     ticket = result.scalar_one_or_none()
     
     if ticket is None:
-        raise HTTPException(status_code=404, detail="Ticket not found")
+        raise HTTPException(status_code=404, detail="Ticket не был найден или у вас не хватает прав доступа")
     return ticket
 
 # read users (limit)
 @app.get("/users", response_model=List[User], tags=["Users"])
-async def get_users(skip: int = 0, limit: int = 100,  db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(User_Model).offset(skip).limit(50))
+async def get_users(skip: int = 0, limit: int = 50,  db: AsyncSession = Depends(get_db), current_user: User_Model= Depends(get_current_user)):
+    if current_user.role != User_Role.ADMIN:
+        raise HTTPException(status_code=403, detail="Нет доступа для просмотра")
+    
+    result = await db.execute(select(User_Model).offset(skip).limit(limit))
     return result.scalars().all()
 
 # read user (login)
 @app.get("/users/{user_login}", response_model=User, tags=['Users'])
-async def get_user(user_login: str, db: AsyncSession = Depends(get_db)):
+async def get_user(user_login: str, db: AsyncSession = Depends(get_db), current_user: User_Model= Depends(get_current_user)):
+    if current_user.role != User_Role.ADMIN:
+        raise HTTPException(status_code=403, detail="Нет доступа для просмотра")
+    
     result = await db.execute(select(User_Model).where(User_Model.login == user_login))
     user = result.scalar_one_or_none()
 
@@ -191,7 +216,7 @@ async def get_user(user_login: str, db: AsyncSession = Depends(get_db)):
 
 # update ticket (id)
 @app.patch("/tickets/{ticket_id}", response_model=Ticket, tags=["Tickets"])
-async def update_ticket(ticket_id: int, ticket_update: Ticket_Update, db: AsyncSession = Depends(get_db)):
+async def update_ticket(ticket_id: int, ticket_update: Ticket_Update, db: AsyncSession = Depends(get_db),  current_user: User_Model = Depends(get_current_user)):
     query = select(Ticket_Model).where(Ticket_Model.id==ticket_id,
                                         Ticket_Model.status != Ticket_Status.CLOSED)
     result = await db.execute(query)
@@ -200,6 +225,9 @@ async def update_ticket(ticket_id: int, ticket_update: Ticket_Update, db: AsyncS
     if ticket is None:
         raise HTTPException(status_code=404, detail="Тикет не найден или закрыт")
     
+    if current_user!= User_Role.ADMIN and ticket.owner_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Нет доступа для изменения") 
+
     update_data = ticket_update.model_dump(exclude_unset=True)
 
     for key, value in update_data.items():
@@ -211,7 +239,10 @@ async def update_ticket(ticket_id: int, ticket_update: Ticket_Update, db: AsyncS
 
 #delete user (login)
 @app.delete("/users/{user_login}", tags=["Users"])
-async def delete_user(user_login: str, db:AsyncSession = Depends(get_db)):
+async def delete_user(user_login: str, db:AsyncSession = Depends(get_db), current_user: User_Model = Depends(get_current_user)):
+    if current_user.role != User_Role.ADMIN:
+        raise HTTPException(status_code=403, detail="Нет доступа для изменения")
+    
     query = select(User_Model).where(User_Model.login == user_login)
     result = await db.execute(query)
 
@@ -227,7 +258,10 @@ async def delete_user(user_login: str, db:AsyncSession = Depends(get_db)):
 
 # delete ticket (id)
 @app.delete("/tickets/{ticket_id}", tags=["Tickets"])
-async def delete_ticket(ticket_id: int, db: AsyncSession = Depends(get_db)):
+async def delete_ticket(ticket_id: int, db: AsyncSession = Depends(get_db), current_user: User_Model = Depends(get_current_user)):
+    if current_user.role != User_Role.ADMIN:
+        raise HTTPException(status_code=403, detail="Нет доступа для изменения")
+
     query = select(Ticket_Model).where(Ticket_Model.id == ticket_id)
     result = await db.execute(query)
 

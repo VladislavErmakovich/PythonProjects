@@ -77,7 +77,7 @@ async def seed_data():
             admin = User_Model(
                 login="admin",
                 email="supesu@ntc.com",
-                password_hash=get_password_hash("admin123"),
+                password_hash=get_password_hash("Admin123"),
                 role=User_Role.ADMIN
             )
             session.add(admin)
@@ -85,19 +85,23 @@ async def seed_data():
 
         admin_id = admin.id
 
-        for ticket_data in TICKETS:
-            ticket = Ticket_Model(
-                title = ticket_data["title"],
-                description = ticket_data["description"],
-                priority = ticket_data["priority"],
-                status = ticket_data["status"],
-                owner_id = admin_id
-            )
-            session.add(ticket)
+        ticket_check = await session.execute(select(Ticket_Model).limit(1))
+        if ticket_check.scalar_one_or_none():
+            print("Тикеты уже есть в базе, пропускаем заполнение.")
+        else:
+            for ticket_data in TICKETS:
+                ticket = Ticket_Model(
+                    title = ticket_data["title"],
+                    description = ticket_data["description"],
+                    priority = ticket_data["priority"],
+                    status = ticket_data["status"],
+                    owner_id = admin_id
+                )
+                session.add(ticket)
+            print(f"Добавлено {len(TICKETS)} стартовых тикотов")
 
         await session.commit()
 
-        print(f"Добавлено {len(TICKETS)} стартовых тикотов")
 
 if __name__ == "__main__":
     asyncio.run(seed_data())
