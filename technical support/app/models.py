@@ -16,6 +16,7 @@ class Ticket_Priority(str, Enum):
 
 class User_Role(str, Enum):
     ADMIN = "admin"
+    MODERATOR = "moderator"
     USER = "user"
 
 class User_Model(Base):

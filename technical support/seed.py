@@ -69,9 +69,9 @@ async def seed_data():
 
     async with new_session() as session:
 
-        query = select(User_Model).where(User_Model.login == "admin")
-        result = await session.execute(query)
-        admin = result.scalar_one_or_none()
+        query_admin = select(User_Model).where(User_Model.login == "admin")
+        result_admin = await session.execute(query_admin)
+        admin = result_admin.scalar_one_or_none()
 
         if not admin:
             admin = User_Model(
@@ -99,7 +99,20 @@ async def seed_data():
                 )
                 session.add(ticket)
             print(f"Добавлено {len(TICKETS)} стартовых тикотов")
+        
+        query_mod = select(User_Model).where(User_Model.login == "moderator")
+        result_mod = await session.execute(query_mod)
+        moderator = result_mod.scalar_one_or_none()
 
+        if not moderator:
+            moderator = User_Model(
+                login="moder",
+                email="mod@example.com",
+                password_hash=get_password_hash("Moder123"),
+                role=User_Role.MODERATOR
+            )
+            session.add(moderator)
+        
         await session.commit()
 
 
