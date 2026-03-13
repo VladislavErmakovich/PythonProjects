@@ -72,7 +72,7 @@ class Token(BaseModel):
     token_type: str
 
 # проверка токена для websocket
-async def get_current_user_wb(websocket: WebSocket, token:str, db:AsyncSession):
+async def get_current_user_wb(token:str, db:AsyncSession):
     try:
         payload = jwt.decode(token=token, key=SECRET_KEY, algorithms=ALGORITHM)
         login: str = payload.get("sub")
@@ -88,8 +88,6 @@ async def get_current_user_wb(websocket: WebSocket, token:str, db:AsyncSession):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
     yield
 
 app = FastAPI(title="CRM support",
@@ -254,7 +252,7 @@ async def update_ticket(ticket_id: int, ticket_update: Ticket_Update, db: AsyncS
     if ticket is None:
         raise HTTPException(status_code=404, detail="Тикет не найден или закрыт")
     
-    if current_user!= User_Role.ADMIN and current_user!= User_Role.MODERATOR and ticket.owner_id != current_user.id :
+    if current_user.role!= User_Role.ADMIN and current_user.role!= User_Role.MODERATOR and ticket.owner_id != current_user.id :
         raise HTTPException(status_code=403, detail="Нет доступа для изменения") 
 
     update_data = ticket_update.model_dump(exclude_unset=True)
@@ -267,7 +265,7 @@ async def update_ticket(ticket_id: int, ticket_update: Ticket_Update, db: AsyncS
     return ticket
 
 # update role (login)
-@app.patch("users/{target_login}/role", response_model=User, tags=["Users"])
+@app.patch("/users/{target_login}/role", response_model=User, tags=["Users"])
 async def change_user_role(target_login: str, role_data: User_Role_Update,
                            db: AsyncSession = Depends(get_db), current_user: User_Model = Depends(get_current_user)):
     if current_user.role != User_Role.ADMIN:
@@ -292,7 +290,7 @@ async def change_user_role(target_login: str, role_data: User_Role_Update,
 # delete user (login)
 @app.delete("/users/{user_login}", tags=["Users"])
 async def delete_user(user_login: str, db:AsyncSession = Depends(get_db), current_user: User_Model = Depends(get_current_user)):
-    if current_user.role != User_Role.ADMIN or current_user.role != User_Role.MODERATOR :
+    if current_user.role != User_Role.ADMIN and current_user.role != User_Role.MODERATOR :
         raise HTTPException(status_code=403, detail="Нет доступа для изменения")
     
     query = select(User_Model).where(User_Model.login == user_login)
@@ -333,7 +331,7 @@ async def delete_ticket(ticket_id: int, db: AsyncSession = Depends(get_db), curr
 # websocket
 @app.websocket("/ws/chat")
 async def websocket_endpoint(websocket: WebSocket, token: str = Query(...), db: AsyncSession = Depends(get_db)):
-    user = await get_current_user_wb(websocket, token, db)
+    user = await get_current_user_wb(token, db)
 
     if user is None:
         await websocket.close(code=1008) 

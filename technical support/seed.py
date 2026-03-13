@@ -68,6 +68,9 @@ async def seed_data():
     print("Заполение БД")
 
     async with new_session() as session:
+        
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
 
         query_admin = select(User_Model).where(User_Model.login == "admin")
         result_admin = await session.execute(query_admin)

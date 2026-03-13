@@ -2,18 +2,14 @@ from passlib.context import CryptContext
 from datetime import datetime, timedelta
 from jose import jwt
 
-#import os
-#from dotenv import load_dotenv
+import os
+from dotenv import load_dotenv
 
-#load_dotenv()
+load_dotenv()
 
-# SECRET_KEY = os.getenv("SECRET_KEY")
-# ALGORITHM = os.getenv("ALGORITHM", "HS256")
-# ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", 30))
-
-SECRET_KEY = "5e54e7eb8b4b0334899a4a15e476d41bfe4c1378e7ac7eb6ebcc812e97271c30" 
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60
+SECRET_KEY = os.getenv("SECRET_KEY")
+ALGORITHM = os.getenv("ALGORITHM", "HS256")
+ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", 30))
 
 password_context = CryptContext(schemes="bcrypt", deprecated="auto")
 
