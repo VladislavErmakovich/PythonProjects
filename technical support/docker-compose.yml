@@ -6,14 +6,17 @@ services:
     ports:
       - "8000:8000"
     depends_on:
-      - db
+      db:
+        condition: service_healthy  # <--- ГЛАВНАЯ МАГИЯ
     environment:
-      - DB_HOST=db  
+      - DB_HOST=db
       - DB_PORT=5432
       - DB_USER=postgres
       - DB_PASSWORD=superpass
       - DB_NAME=crm_db
       - SECRET_KEY=docker_secret_key
+    volumes:
+      - .:/src
 
   db:
     image: postgres:15-alpine
@@ -26,12 +29,14 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-
+    
+    # Docker будет проверять базу каждые 5 сек
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"] 
+      test: ["CMD-SHELL", "pg_isready -U postgres -d crm_db"]
       interval: 5s
       timeout: 5s
       retries: 5
+      start_period: 5s
 
 volumes:
   postgres_data:

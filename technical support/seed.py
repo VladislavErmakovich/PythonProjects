@@ -1,5 +1,5 @@
 import asyncio
-from sqlalchemy import select
+from sqlalchemy import select, or_
 
 from app.database import new_session, engine, Base
 from app.models import Ticket_Model, Ticket_Status, Ticket_Priority, User_Model, User_Role
@@ -68,11 +68,16 @@ async def seed_data():
     print("Заполение БД")
 
     async with new_session() as session:
-        
+
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
 
-        query_admin = select(User_Model).where(User_Model.login == "admin")
+        query_admin = select(User_Model).where(
+            or_(
+                User_Model.login == "admin",
+                User_Model.email == "supesu@ntc.com"
+            )
+        )
         result_admin = await session.execute(query_admin)
         admin = result_admin.scalar_one_or_none()
 
@@ -91,6 +96,7 @@ async def seed_data():
         ticket_check = await session.execute(select(Ticket_Model).limit(1))
         if ticket_check.scalar_one_or_none():
             print("Тикеты уже есть в базе, пропускаем заполнение.")
+            return
         else:
             for ticket_data in TICKETS:
                 ticket = Ticket_Model(
@@ -103,7 +109,13 @@ async def seed_data():
                 session.add(ticket)
             print(f"Добавлено {len(TICKETS)} стартовых тикотов")
         
-        query_mod = select(User_Model).where(User_Model.login == "moderator")
+        query_mod = select(User_Model).where(
+            or_(
+                User_Model.login == "moder", 
+                User_Model.email == "mod@example.com"
+            )
+        )
+        
         result_mod = await session.execute(query_mod)
         moderator = result_mod.scalar_one_or_none()
 
