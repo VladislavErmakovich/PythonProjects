@@ -1,6 +1,8 @@
 from fastapi import FastAPI, Depends, HTTPException, WebSocket, Query, WebSocketDisconnect
 from fastapi.security import OAuth2PasswordRequestForm, OAuth2PasswordBearer
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, EmailStr, Field, field_validator
 from datetime import datetime
 from typing import List, Optional
@@ -105,6 +107,9 @@ app.add_middleware(
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
+# подключение папки со статикой
+app.mount("/static", StaticFiles(directory="app/static"), name="static")
+
 # функция для получения пользователя
 async def get_current_user(token: str = Depends(oauth2_scheme),
                            db: AsyncSession = Depends(get_db)):
@@ -131,8 +136,8 @@ async def get_current_user(token: str = Depends(oauth2_scheme),
 
 # проверка статуса
 @app.get("/")
-async def root():
-    return ({"message": "CRM работает", "status": "ok"})
+async def read_index():
+    return FileResponse("app/static/index.html")
 
 # create user
 @app.post("/register", response_model=User, tags=["Auth"])
