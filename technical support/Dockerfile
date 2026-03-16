@@ -1,4 +1,3 @@
-# Используем Python 3.10 slim (легкий образ)
 FROM python:3.10-slim
 
 WORKDIR /src
